@@ -1,16 +1,30 @@
 import { useState, useEffect } from 'react'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { decodeJWT, encodeJWT, getTokenExpiration } from '@/lib/jwt'
+import {
+  decodeJWT,
+  encodeJWT,
+  getTokenExpiration,
+  getTokenSummary,
+  decodeTokenHeader,
+  isTokenExpired,
+  getUserFromToken
+} from '@/lib/jwt'
+import { useAppContext } from '@/contexts/AppContext'
+import { Info } from 'lucide-react'
 
 type LastModified = 'token' | 'decoded' | null;
 
 export default function JWTDecoder() {
-  const [tokenString, setTokenString] = useState('')
-  const [decodedToken, setDecodedToken] = useState('')
-  const [lastModified, setLastModified] = useState<LastModified>(null)
+  const { jwtState, updateJWTState } = useAppContext()
+  const [tokenString, setTokenString] = useState(jwtState.token || '')
+  const [decodedToken, setDecodedToken] = useState(jwtState.decodedPayload || '')
+  const [lastModified, setLastModified] = useState<LastModified>(
+    jwtState.token ? 'token' : null
+  )
   const [error, setError] = useState('')
   const [expirationInfo, setExpirationInfo] = useState<string>('')
+  const [tokenInfo, setTokenInfo] = useState<string>('')
 
   // Handle decoding when token string changes
   useEffect(() => {
@@ -20,29 +34,49 @@ export default function JWTDecoder() {
         const decoded = decodeJWT(tokenString)
         if (decoded) {
           setDecodedToken(JSON.stringify(decoded, null, 2))
-          
-          // Get expiration info
-          const maxAge = getTokenExpiration(tokenString)
-          if (maxAge !== null) {
-            const minutes = Math.floor(maxAge / 60)
-            const seconds = maxAge % 60
-            if (maxAge > 0) {
-              setExpirationInfo(`Token expires in ${minutes}m ${seconds}s`)
-            } else {
+
+          // Get token summary
+          const summary = getTokenSummary(tokenString)
+          if (summary) {
+            const expired = isTokenExpired(tokenString)
+            if (expired) {
               setExpirationInfo('Token has expired')
+            } else {
+              setExpirationInfo(`Token expires in ${summary.expiresIn}`)
             }
+
+            // Build detailed token info
+            const header = decodeTokenHeader(tokenString)
+            const userInfo = getUserFromToken(tokenString)
+
+            let info = `Type: ${summary.type}\n`
+            if (header) {
+              info += `Algorithm: ${header.alg}\n`
+            }
+            if (userInfo) {
+              info += `User: ${userInfo.userId}\n`
+              info += `Role: ${userInfo.roleProfile}\n`
+              info += `Session: ${userInfo.sessionId}\n`
+            }
+            info += `Expires: ${summary.expiresAt}\n`
+            info += `Status: ${summary.valid ? 'Valid' : 'Expired'}`
+
+            setTokenInfo(info)
           } else {
             setExpirationInfo('')
+            setTokenInfo('')
           }
         } else {
           setError('Invalid JWT token format')
           setDecodedToken('')
           setExpirationInfo('')
+          setTokenInfo('')
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to decode token')
         setDecodedToken('')
         setExpirationInfo('')
+        setTokenInfo('')
       }
     }
   }, [tokenString, lastModified])
@@ -79,12 +113,23 @@ export default function JWTDecoder() {
   const handleTokenChange = (value: string) => {
     setTokenString(value)
     setLastModified('token')
+    updateJWTState({ token: value })
   }
 
   const handleDecodedChange = (value: string) => {
     setDecodedToken(value)
     setLastModified('decoded')
+    updateJWTState({ decodedPayload: value })
   }
+
+  // Update context when decoding/encoding results change
+  useEffect(() => {
+    if (lastModified === 'token' && decodedToken) {
+      updateJWTState({ decodedPayload: decodedToken })
+    } else if (lastModified === 'decoded' && tokenString) {
+      updateJWTState({ token: tokenString })
+    }
+  }, [decodedToken, tokenString, lastModified])
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -103,8 +148,26 @@ export default function JWTDecoder() {
         )}
 
         {expirationInfo && (
-          <div className="bg-primary/10 border border-primary text-primary px-4 py-3 rounded">
+          <div className={`border px-4 py-3 rounded ${
+            expirationInfo.includes('expired')
+              ? 'bg-destructive/10 border-destructive text-destructive'
+              : 'bg-primary/10 border-primary text-primary'
+          }`}>
             {expirationInfo}
+          </div>
+        )}
+
+        {tokenInfo && (
+          <div className="bg-muted/50 border border-muted px-4 py-3 rounded">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 mt-0.5 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold mb-1">Token Information</p>
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+                  {tokenInfo}
+                </pre>
+              </div>
+            </div>
           </div>
         )}
 

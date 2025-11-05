@@ -4,23 +4,28 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { encryptDataWithRSA_AES } from '@/lib/encrypt'
 import { decryptDataWithRSA_AES } from '@/lib/decrypt'
+import { useAppContext } from '@/contexts/AppContext'
+import { Shield } from 'lucide-react'
 
 type LastModified = 'unencrypted' | 'encrypted' | null;
 
 export default function Encryption() {
-  const [publicKey, setPublicKey] = useState('')
-  const [privateKey, setPrivateKey] = useState('')
-  const [unencryptedText, setUnencryptedText] = useState('')
-  const [encryptedText, setEncryptedText] = useState('')
-  const [lastModified, setLastModified] = useState<LastModified>(null)
+  const { encryptionState, privateKey: contextPrivateKey, updateEncryptionState } = useAppContext()
+  const [publicKey, setPublicKey] = useState(encryptionState.key || '')
+  const [privateKey, setPrivateKey] = useState(contextPrivateKey || '')
+  const [unencryptedText, setUnencryptedText] = useState(encryptionState.text || '')
+  const [encryptedText, setEncryptedText] = useState(encryptionState.result || '')
+  const [lastModified, setLastModified] = useState<LastModified>(
+    encryptionState.mode === 'encrypt' ? 'unencrypted' : 'encrypted'
+  )
   const [error, setError] = useState('')
 
   // Load keys from environment variables on mount
   useEffect(() => {
     const envPublicKey = import.meta.env.VITE_PUBLIC_KEY_PEM || ''
     const envPrivateKey = import.meta.env.VITE_PRIVATE_KEY_PEM || ''
-    setPublicKey(envPublicKey)
-    setPrivateKey(envPrivateKey)
+    if (!publicKey) setPublicKey(envPublicKey)
+    if (!privateKey) setPrivateKey(envPrivateKey)
   }, [])
 
   // Handle encryption when unencrypted text changes
@@ -76,12 +81,28 @@ export default function Encryption() {
   const handleUnencryptedChange = (value: string) => {
     setUnencryptedText(value)
     setLastModified('unencrypted')
+    updateEncryptionState({ text: value, mode: 'encrypt' })
   }
 
   const handleEncryptedChange = (value: string) => {
     setEncryptedText(value)
     setLastModified('encrypted')
+    updateEncryptionState({ result: value, mode: 'decrypt' })
   }
+
+  // Update context when encryption/decryption results change
+  useEffect(() => {
+    if (lastModified === 'unencrypted' && encryptedText) {
+      updateEncryptionState({ result: encryptedText })
+    } else if (lastModified === 'encrypted' && unencryptedText) {
+      updateEncryptionState({ text: unencryptedText })
+    }
+  }, [encryptedText, unencryptedText, lastModified])
+
+  // Update context when keys change
+  useEffect(() => {
+    updateEncryptionState({ key: publicKey, privateKey })
+  }, [publicKey, privateKey])
 
   return (
     <div className="min-h-screen bg-background">
@@ -107,7 +128,13 @@ export default function Encryption() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="privateKey">Private Key</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="privateKey">Private Key</Label>
+                <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                  <Shield className="h-3 w-3" />
+                  <span>Memory only - not stored</span>
+                </div>
+              </div>
               <Input
                 id="privateKey"
                 type="text"
