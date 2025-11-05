@@ -5,7 +5,7 @@ import JWTDecoder from '@/pages/JWTDecoder'
 
 function App() {
   return (
-    <Router>
+    <Router basename="/healthpro-cryptic">
       <div className="min-h-screen bg-background">
         <Navbar />
         <Routes>
